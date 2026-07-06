@@ -22,14 +22,6 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          submodules: recursive
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Verify submodule content
-        run: |
-          ls -la backend/whisper.cpp/examples/server/public/ || echo "SUBMODULE CONTENT MISSING"
-          find backend/whisper.cpp -maxdepth 3 -type d | head -20
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v4
@@ -57,7 +49,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: ./backend
-          file: ./backend/Dockerfile.server-cpu
+          file: ./backend/Dockerfile.standalone-server
           platforms: linux/amd64
           push: true
           tags: ${{ steps.meta-whisper.outputs.tags }}
