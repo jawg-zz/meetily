@@ -1,0 +1,80 @@
+# Standalone whisper-server Dockerfile
+# Builds whisper.cpp server directly from upstream repo
+# No submodule dependency
+
+FROM ubuntu:22.04 AS builder
+
+ARG WHISPER_VERSION=master
+ARG DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    cmake \
+    git \
+    wget \
+    pkg-config \
+    libsdl2-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Clone whisper.cpp directly instead of using submodule
+RUN git clone --depth 1 --branch master https://github.com/ggerganov/whisper.cpp.git /app/whisper.cpp
+
+# Build whisper server with CPU-only optimizations
+WORKDIR /app/whisper.cpp
+RUN cmake -B build \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DWHISPER_BUILD_SERVER=ON \
+    -DWHISPER_BUILD_EXAMPLES=ON \
+    -DWHISPER_BUILD_TESTS=OFF \
+    -DBUILD_SHARED_LIBS=OFF \
+    -DGGML_STATIC=ON \
+    -DGGML_NATIVE=OFF \
+    -DGGML_CUDA=OFF \
+    -DGGML_METAL=OFF \
+    -DGGML_OPENCL=OFF \
+    -DGGML_ACCELERATE=OFF
+
+RUN cmake --build build --config Release --target whisper-server -j$(nproc)
+
+# Runtime stage
+FROM ubuntu:22.04 AS runtime
+
+RUN apt-get update && apt-get install -y \
+    curl \
+    ffmpeg \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
+
+RUN useradd -m -u 1000 whisper && \
+    mkdir -p /app/models /app/uploads /app/public && \
+    chown -R whisper:whisper /app
+
+COPY --from=builder /app/whisper.cpp/build/bin/whisper-server /app/
+COPY --from=builder /app/whisper.cpp/examples/server/public/ /app/public/
+
+# Copy entrypoint from backend/docker/
+COPY docker/entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh && \
+    sed -i 's/\r$//' /app/entrypoint.sh
+
+RUN chown -R whisper:whisper /app
+
+USER whisper
+WORKDIR /app
+
+EXPOSE 8178
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+    CMD curl -f http://localhost:8178/ || exit 1
+
+ENV WHISPER_MODEL=models/ggml-base.en.bin
+ENV WHISPER_HOST=0.0.0.0
+ENV WHISPER_PORT=8178
+ENV WHISPER_THREADS=0
+ENV WHISPER_USE_GPU=true
+
+ENTRYPOINT ["/app/entrypoint.sh"]
+CMD ["server"]
