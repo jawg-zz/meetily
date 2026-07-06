@@ -53,7 +53,6 @@ RUN useradd -m -u 1000 whisper && \
     chown -R whisper:whisper /app
 
 COPY --from=builder /app/whisper.cpp/build/bin/whisper-server /app/
-COPY --from=builder /app/whisper.cpp/examples/server/public/ /app/public/
 
 # Copy entrypoint from backend/docker/
 COPY docker/entrypoint.sh /app/entrypoint.sh
